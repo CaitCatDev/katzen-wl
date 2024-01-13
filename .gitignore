@@ -1,0 +1,5 @@
+server
+outputs
+*.o
+build
+
