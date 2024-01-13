@@ -112,16 +112,33 @@ void kwl_output_bind(struct wl_client *client, void *data, uint32_t version, uin
 	} 
 	wl_resource_set_implementation(resource,
 			&wl_output_implementation, data, NULL);
-
-	wl_output_send_geometry(resource, output->x, output->y, 
+	
+	if(version >= WL_OUTPUT_GEOMETRY_SINCE_VERSION) {
+		wl_output_send_geometry(resource, output->x, output->y, 
 			output->phy_width, output->phy_height, output->subpixel, 
 			output->make, output->model, output->transform);
-	wl_output_send_mode(resource, output->current_mode.flags, output->current_mode.width,
+	}
+
+	if(version >= WL_OUTPUT_MODE_SINCE_VERSION) {
+		wl_output_send_mode(resource, output->current_mode.flags, output->current_mode.width,
 			output->current_mode.height, output->current_mode.refresh);
-	wl_output_send_scale(resource, output->scale);
-	wl_output_send_name(resource, output->name);
-	wl_output_send_description(resource, output->description);
-	wl_output_send_done(resource);
+	}
+
+	if(version >= WL_OUTPUT_SCALE_SINCE_VERSION) {
+		wl_output_send_scale(resource, output->scale);
+	}
+
+	if(version >= WL_OUTPUT_NAME_SINCE_VERSION) {
+		wl_output_send_name(resource, output->name);
+	}
+
+	if(version >= WL_OUTPUT_DESCRIPTION_SINCE_VERSION) {
+		wl_output_send_description(resource, output->description);
+	}
+	
+	if(version >= WL_OUTPUT_DONE_SINCE_VERSION) {
+		wl_output_send_done(resource);
+	}
 
 }
 
