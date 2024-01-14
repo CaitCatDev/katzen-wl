@@ -3,6 +3,9 @@
 #include <stdint.h>
 #include <wayland-server.h>
 
+#include <kwl/interfaces/kwl_buffer.h>
+
+
 typedef struct _kwl_output_mode_s {
 	int32_t width;
 	int32_t height;
@@ -41,6 +44,8 @@ typedef struct _kwl_output_s {
 
 
 	struct wl_global *global;
+
+	kwl_buffer_t *buffer;
 
 	struct {
 		struct wl_signal frame; /*Indicates you should draw a frame*/

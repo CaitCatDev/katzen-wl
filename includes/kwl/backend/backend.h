@@ -24,7 +24,7 @@ typedef void (*pfn_kwl_backend_deinit)(kwl_backend_t *backend);
 struct _kwl_backend_s {
 	/**Events that call user speficied code when triggered*/
 	struct {
-		struct wl_signal *new_output; /**A new monitor became avaliable*/
+		struct wl_signal new_output; /**A new monitor became avaliable*/
 	} events;
 	
 	/**Functions for the user to call into backend speficied code*/
