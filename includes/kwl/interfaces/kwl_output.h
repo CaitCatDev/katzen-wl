@@ -45,4 +45,8 @@ typedef struct _kwl_output_s {
 	struct {
 		struct wl_signal frame; /*Indicates you should draw a frame*/
 	} events;
+
+	struct {
+		
+	} entry_points;
 } kwl_output_t;

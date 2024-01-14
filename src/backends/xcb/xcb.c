@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdio.h>
+#include <wayland-util.h>
 #include <xcb/xcb.h>
 #include <xcb/dri3.h>
 #include <xcb/shm.h>
@@ -16,6 +17,10 @@
 #include <kwl/interfaces/kwl_output.h>
 #include <kwl/logger/log.h>
 #include <xcb/xproto.h>
+
+/*TODO: move this into renderer code*/
+#include <kwl_private/allocator/allocator.h>
+#include <kwl_private/interfaces/kwl_buffer.h>
 
 typedef struct {
 	kwl_output_t generic; /**Generic output*/
@@ -35,13 +40,30 @@ typedef struct {
 
 	xcb_connection_t *connection;
 	xcb_screen_t *screen;
+	
+	kwl_allocator_t *allocator;
 
 	struct wl_list outputs;
 } kwl_xcb_backend_t;
 
 void kwl_xcb_backend_deinit(kwl_backend_t *backend) {
-	
+	kwl_xcb_backend_t *xcb = (void*)backend;
+	kwl_xcb_output_t *x11_output, *tmp;
 
+	wl_event_source_remove(xcb->x_event);
+	
+	wl_list_for_each_safe(x11_output, tmp, &xcb->outputs, link) {
+		wl_list_remove(&x11_output->link);
+		free(x11_output->generic.name);
+		xcb_free_gc(x11_output->connection, x11_output->gc);
+		xcb_destroy_window(x11_output->connection, x11_output->window);
+		free(x11_output);
+	}
+
+	free(xcb->allocator);
+
+	xcb_disconnect(xcb->connection);
+	free(xcb);
 }
 
 int kwl_xcb_backend_start(kwl_backend_t *backend) {
@@ -54,25 +76,6 @@ int kwl_xcb_backend_start(kwl_backend_t *backend) {
 
 	xcb_flush(xcb->connection);
 	return 0;
-}
-
-int kwl_xcb_backend_event(int fd, uint32_t mask, void *data) {
-	kwl_xcb_backend_t *xcb = (void*)data;
-	xcb_generic_event_t *ev;
-
-	while((ev = xcb_poll_for_event(xcb->connection))) {
-		switch(ev->response_type & 0x7f) {
-			default:
-				kwl_info("Unhandled Event: %d\n", ev->response_type);
-		}
-		xcb_flush(xcb->connection);
-		free(ev);
-	}
-	return 0;
-}
-
-void kwl_xcb_output_init() {
-
 }
 
 void kwl_xcb_output_set_mode(kwl_output_t *output, uint32_t height, uint32_t width) {
@@ -94,6 +97,62 @@ void kwl_xcb_output_set_geomerty(kwl_output_t *output, int32_t x, int32_t y,
 	output->phy_width = phy_width;
 	output->phy_height = phy_height;
 }
+
+kwl_xcb_output_t *kwl_xcb_find_output_by_window(struct wl_list *list, xcb_window_t window) {
+	kwl_xcb_output_t *output;
+
+	wl_list_for_each(output, list, link) {
+		if(output->window == window) return output;
+	}
+
+	return NULL;
+}
+
+void kwl_xcb_configure_notify(kwl_xcb_backend_t *xcb, xcb_configure_notify_event_t *notify) {
+	kwl_xcb_output_t *x11_output;
+
+	x11_output = kwl_xcb_find_output_by_window(&xcb->outputs, notify->window);
+	kwl_xcb_output_set_mode(&x11_output->generic, notify->height, notify->width);
+}
+
+void kwl_xcb_expose(kwl_xcb_backend_t *xcb, xcb_expose_event_t *expose) {
+	kwl_xcb_output_t *x11_output;
+
+	x11_output = kwl_xcb_find_output_by_window(&xcb->outputs, expose->window);
+	
+	kwl_buffer_t *buffer = xcb->allocator->create_buffer(x11_output->generic.current_mode.height, x11_output->generic.current_mode.width, 0);
+	void *data = buffer->entry_points.get_data_ptr(buffer);
+
+	xcb_put_image(xcb->connection, XCB_IMAGE_FORMAT_Z_PIXMAP, x11_output->window,
+			x11_output->gc, x11_output->generic.current_mode.width, 
+			x11_output->generic.current_mode.height, 0, 0, 0, 24, 
+			x11_output->generic.current_mode.width * x11_output->generic.current_mode.height * 4, 
+			data);
+
+	buffer->entry_points.destroy(buffer);
+}
+
+int kwl_xcb_backend_event(int fd, uint32_t mask, void *data) {
+	kwl_xcb_backend_t *xcb = (void*)data;
+	xcb_generic_event_t *ev;
+
+	while((ev = xcb_poll_for_event(xcb->connection))) {
+		switch(ev->response_type & 0x7f) {
+			case XCB_EXPOSE:
+				kwl_xcb_expose(xcb, (xcb_expose_event_t*)ev);
+				break;
+			case XCB_CONFIGURE_NOTIFY:
+				kwl_xcb_configure_notify(xcb, (xcb_configure_notify_event_t*)ev);
+				break;
+			default:
+				kwl_info("Unhandled Event: %d\n", ev->response_type);
+		}
+		xcb_flush(xcb->connection);
+		free(ev);
+	}
+	return 0;
+}
+
 
 static const struct wl_output_interface wl_output_implementation  = {
 	.release = NULL,
@@ -209,7 +268,7 @@ static kwl_xcb_output_t *kwl_xcb_output_create(kwl_xcb_backend_t *xcb, uint32_t 
 		return NULL;
 	}
 
-
+	wl_list_init(&x11_output->link);
 	return x11_output;
 }
 
@@ -274,7 +333,7 @@ kwl_backend_t *kwl_xcb_backend_init(struct wl_display *display) {
 			}
 		}
 	}
-
+	
 	/*create the speficed amount of outputs*/
 	for(; override; override--) {
 		output = kwl_xcb_output_create(xcb, override);
@@ -282,10 +341,14 @@ kwl_backend_t *kwl_xcb_backend_init(struct wl_display *display) {
 	}
 
 	loop = wl_display_get_event_loop(display);
-	wl_event_loop_add_fd(loop, xcb_get_file_descriptor(xcb->connection),
+	xcb->x_event = wl_event_loop_add_fd(loop, xcb_get_file_descriptor(xcb->connection),
 			WL_EVENT_READABLE, kwl_xcb_backend_event, xcb);
 
 	xcb->impl.entry_points.start = kwl_xcb_backend_start;
 	xcb->impl.entry_points.deinit = kwl_xcb_backend_deinit;
+
+	/*TODO: MOVE INTO RENDERER*/
+	xcb->allocator = kwl_allocator_init();
+
 	return (void *)xcb;
 }

@@ -16,7 +16,9 @@ includes = include_directories('includes')
 
 src_files = [ 'src/backends/backend.c',
   'src/backends/xcb/xcb.c',
-  'src/logger/log.c'
+  'src/logger/log.c',
+  'src/allocator/allocator.c',
+  'src/allocator/shm/shm.c'
   ]
 
 deps = [ wayland_deps, xcb_deps ]
