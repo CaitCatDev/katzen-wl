@@ -41,8 +41,6 @@ typedef struct {
 	xcb_connection_t *connection;
 	xcb_screen_t *screen;
 	
-	kwl_allocator_t *allocator;
-
 	struct wl_list outputs;
 } kwl_xcb_backend_t;
 
@@ -59,8 +57,6 @@ void kwl_xcb_backend_deinit(kwl_backend_t *backend) {
 		xcb_destroy_window(x11_output->connection, x11_output->window);
 		free(x11_output);
 	}
-
-	free(xcb->allocator);
 
 	xcb_disconnect(xcb->connection);
 	free(xcb);
@@ -116,9 +112,20 @@ void kwl_xcb_configure_notify(kwl_xcb_backend_t *xcb, xcb_configure_notify_event
 
 	x11_output = kwl_xcb_find_output_by_window(&xcb->outputs, notify->window);
 	kwl_xcb_output_set_mode(&x11_output->generic, notify->height, notify->width);
+	wl_signal_emit(&x11_output->generic.events.resize, &x11_output->generic);
+}
 
-	x11_output->generic.buffer->entry_points.destroy(x11_output->generic.buffer);
-	x11_output->generic.buffer = xcb->allocator->create_buffer(notify->height, notify->width, 0);
+void kwl_xcb_output_commit(kwl_output_t *output) {
+	kwl_xcb_output_t *x11_output = (void*)output;
+	kwl_buffer_t *buffer = x11_output->generic.buffer;
+	uint32_t height = buffer->entry_points.get_height(buffer);
+	uint32_t width = buffer->entry_points.get_width(buffer);
+
+	xcb_put_image(x11_output->connection, XCB_IMAGE_FORMAT_Z_PIXMAP,
+			x11_output->window, x11_output->gc, width, height, 0, 0, 0, 
+			24, height * width * 4, 
+			buffer->entry_points.get_data_ptr(x11_output->generic.buffer));
+
 }
 
 void kwl_xcb_expose(kwl_xcb_backend_t *xcb, xcb_expose_event_t *expose) {
@@ -128,12 +135,6 @@ void kwl_xcb_expose(kwl_xcb_backend_t *xcb, xcb_expose_event_t *expose) {
 
 	/*trigger frame events*/
 	wl_signal_emit(&x11_output->generic.events.frame, x11_output);
-	xcb_put_image(x11_output->connection, XCB_IMAGE_FORMAT_Z_PIXMAP,
-			x11_output->window, x11_output->gc, x11_output->generic.current_mode.width, 
-			x11_output->generic.current_mode.height, 0, 0, 0, 
-			24, x11_output->generic.current_mode.height * x11_output->generic.current_mode.width * 4, 
-			x11_output->generic.buffer->entry_points.get_data_ptr(x11_output->generic.buffer));
-
 }
 
 int kwl_xcb_backend_event(int fd, uint32_t mask, void *data) {
@@ -219,9 +220,9 @@ static kwl_xcb_output_t *kwl_xcb_output_create(kwl_xcb_backend_t *xcb, uint32_t 
 	x11_output->connection = xcb->connection;
 	x11_output->gc = xcb_generate_id(xcb->connection);
 	wl_signal_init(&x11_output->generic.events.frame);
+	wl_signal_init(&x11_output->generic.events.resize);
 	kwl_output = &x11_output->generic;
 	kwl_output->scale = 1; /*scale to one*/
-	kwl_output->buffer = xcb->allocator->create_buffer(600, 600, 0);
 
 	kwl_xcb_output_set_mode(kwl_output, 600, 600);
 	/*There is no physical geomerty to this output*/
@@ -239,6 +240,8 @@ static kwl_xcb_output_t *kwl_xcb_output_create(kwl_xcb_backend_t *xcb, uint32_t 
 	kwl_output->description = "X11 Virtual Output";
 	
 	kwl_output->global = wl_global_create(xcb->display, &wl_output_interface, 4, kwl_output, kwl_output_bind);
+
+	kwl_output->entry_points.kwl_output_commit = kwl_xcb_output_commit;
 
 	mask = XCB_CW_EVENT_MASK;
 	values[0] = XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_KEY_PRESS |
@@ -339,9 +342,6 @@ kwl_backend_t *kwl_xcb_backend_init(struct wl_display *display) {
 			}
 		}
 	}
-
-	/*TODO: MOVE INTO RENDERER*/
-	xcb->allocator = kwl_allocator_init();
 
 	/*create the speficed amount of outputs*/
 	for(; override; override--) {

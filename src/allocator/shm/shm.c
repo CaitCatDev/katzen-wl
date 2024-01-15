@@ -25,6 +25,19 @@ typedef struct _kwl_shm_allocator_s {
 	kwl_allocator_t allocator;
 } kwl_shm_allocator_t;
 
+uint32_t kwl_shm_buffer_get_height(kwl_buffer_t *buffer) {
+	kwl_shm_buffer_t *shm_buffer = (void*)buffer;
+
+	return shm_buffer->height;
+}
+
+uint32_t kwl_shm_buffer_get_width(kwl_buffer_t *buffer) {
+	kwl_shm_buffer_t *shm_buffer = (void*)buffer;
+
+	return shm_buffer->width;
+}
+
+
 void *kwl_shm_buffer_get_data(kwl_buffer_t *buffer) {
 	kwl_shm_buffer_t *shm_buffer = (void*)buffer;
 
@@ -42,6 +55,8 @@ void kwl_shm_buffer_destroy(kwl_buffer_t *buffer) {
 static const kwl_buffer_entry_points_t kwl_buffer_entry_points = {
 	.destroy = kwl_shm_buffer_destroy,
 	.get_data_ptr = kwl_shm_buffer_get_data,
+	.get_width = kwl_shm_buffer_get_width,
+	.get_height = kwl_shm_buffer_get_height,
 };
 
 kwl_buffer_t *kwl_shm_allocator_create_buffer(uint32_t height, uint32_t width, uint32_t format) {

@@ -18,7 +18,9 @@ src_files = [ 'src/backends/backend.c',
   'src/backends/xcb/xcb.c',
   'src/logger/log.c',
   'src/allocator/allocator.c',
-  'src/allocator/shm/shm.c'
+  'src/allocator/shm/shm.c',
+  'src/renderer/renderer.c',
+  'src/renderer/software/software.c'
   ]
 
 deps = [ wayland_deps, xcb_deps ]

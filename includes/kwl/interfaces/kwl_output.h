@@ -19,7 +19,9 @@ typedef struct _kwl_output_mode_list_s {
 	struct wl_list link;
 } kwl_output_mode_list_t;
 
-typedef struct _kwl_output_s {
+typedef struct _kwl_output_s kwl_output_t ;
+
+struct _kwl_output_s {
 	/*Version 1.0 Details*/
 	char *make;
 	char *model;
@@ -49,9 +51,10 @@ typedef struct _kwl_output_s {
 
 	struct {
 		struct wl_signal frame; /*Indicates you should draw a frame*/
+		struct wl_signal resize;
 	} events;
 
 	struct {
-		
+		void (*kwl_output_commit)(kwl_output_t *output);
 	} entry_points;
-} kwl_output_t;
+};
